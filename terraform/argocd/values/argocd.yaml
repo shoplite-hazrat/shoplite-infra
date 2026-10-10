@@ -1,0 +1,57 @@
+# Argo CD for a single local cluster: non-HA, small footprint.
+# Production would run the HA variant (redis-ha, multiple controller shards,
+# 2+ repo-servers) and SSO instead of the local admin user.
+
+global:
+  # Served through the Gateway in Phase 5 as http://argocd.localhost:8081
+  domain: argocd.localhost
+
+configs:
+  params:
+    # TLS is terminated at the Gateway; Argo CD itself speaks plain HTTP.
+    server.insecure: true
+  cm:
+    # Poll the gitops repo every 60s (a webhook would make this instant).
+    timeout.reconciliation: 60s
+    # Show resource health for CloudNativePG clusters and other CRDs.
+    resource.customizations.health.postgresql.cnpg.io_Cluster: |
+      hs = {}
+      if obj.status ~= nil and obj.status.phase ~= nil then
+        if obj.status.phase == "Cluster in healthy state" then
+          hs.status = "Healthy"
+        else
+          hs.status = "Progressing"
+        end
+        hs.message = obj.status.phase
+        return hs
+      end
+      hs.status = "Progressing"
+      hs.message = "Waiting for cluster status"
+      return hs
+
+# Not needed locally: no SSO, no notification channels.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+server:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+applicationSet:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { memory: 256Mi }
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { memory: 128Mi }
