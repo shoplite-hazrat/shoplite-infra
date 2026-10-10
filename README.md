@@ -5,6 +5,7 @@ Terraform that provisions the Kubernetes cluster. What runs *inside* the cluster
 | Path | What |
 |---|---|
 | `terraform/kind/` | Local multi-node [kind](https://kind.sigs.k8s.io) cluster |
+| `terraform/argocd/` | Bootstrap: installs Argo CD and the root app-of-apps that points at the gitops repo |
 | `terraform/eks/` | (Phase 10) cloud cluster |
 
 ## Local cluster
@@ -12,11 +13,17 @@ Terraform that provisions the Kubernetes cluster. What runs *inside* the cluster
 Requires Docker, Terraform >= 1.14, kind and kubectl.
 
 ```bash
-make up          # terraform apply, then merge kubeconfig and switch context to kind-shoplite
+make up               # cluster + Argo CD bootstrap (~8 min first time)
 kubectl get nodes -L topology.kubernetes.io/zone
-make down        # destroy
-make check       # fmt + validate + tflint (same as CI)
+make argocd-password  # initial admin password
+make argocd-ui        # http://localhost:8090 (user: admin)
+make down             # destroy
+make check            # fmt + validate + tflint (same as CI)
 ```
+
+### Bootstrap boundary
+
+Terraform installs exactly two things into the cluster: **Argo CD** and **one root `Application`** (`argocd/root`) that tracks `shoplite-gitops/argocd/` on `main`. Everything else is declared in git and reconciled by Argo CD. To change what runs in the cluster, open a PR on the gitops repo; there is no `kubectl apply` and no Terraform involved.
 
 | Node | Role | Labels |
 |---|---|---|

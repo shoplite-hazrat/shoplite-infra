@@ -19,14 +19,18 @@ concurrency:
 
 jobs:
   terraform:
-    name: Terraform checks
+    name: Terraform checks (${{ matrix.module }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [kind, argocd]
     permissions:
       contents: read
       security-events: write # IaC scan results to the Security tab
     defaults:
       run:
-        working-directory: terraform/kind
+        working-directory: terraform/${{ matrix.module }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
@@ -63,7 +67,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: trivy-iac.sarif
-          category: trivy-iac
+          category: trivy-iac-${{ matrix.module }}
       - name: Fail on HIGH/CRITICAL misconfigurations
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
