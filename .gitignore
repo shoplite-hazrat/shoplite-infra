@@ -3,3 +3,5 @@
 *.tfstate.*
 *.tfvars
 kubeconfig*
+.terraform.lock.hcl.bak
+.tflint.d/

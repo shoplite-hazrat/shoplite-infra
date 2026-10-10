@@ -1,0 +1,84 @@
+# Static checks for the infrastructure code. There is no `apply` here: the
+# kind cluster lives on a laptop, so CI can only prove the code is well-formed,
+# lint-clean and free of known misconfigurations. (Cloud environments in
+# Phase 10 add `plan` on PRs and a gated `apply` on main.)
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  terraform:
+    name: Terraform checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write # IaC scan results to the Security tab
+    defaults:
+      run:
+        working-directory: terraform/kind
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.64.0
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+      - name: terraform validate
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --format compact
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids rate limits when fetching plugins
+
+      - name: Scan IaC for misconfigurations (report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-iac.sarif
+          exit-code: "0"
+      - name: Upload IaC scan results
+        if: always() && hashFiles('trivy-iac.sarif') != ''
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+      - name: Fail on HIGH/CRITICAL misconfigurations
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          skip-setup-trivy: true
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [terraform]
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: test "$FAILED" = "false"
